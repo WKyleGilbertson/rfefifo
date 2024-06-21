@@ -2,13 +2,17 @@
 #pragma comment(lib, "lib/FTD2XX.lib")
 #include "inc/ftd2xx.h"
 #include "inc/version.h"
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <time.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "inc/WinTypes.h"
 
 //#define MLEN 65536
@@ -35,7 +39,8 @@ typedef struct
 typedef struct
 {
   FILE *ifp;
-  FILE *ofp;
+  //FILE *ofp;
+  int  ofp;
   char baseFname[64];
   char sampFname[64];
   char outFname[64];
@@ -341,7 +346,10 @@ void writeToBinFile(CONFIG *cfg, PKT *p)
     }
     buff[2 * idx + 1] = valueToWrite;
   }
-  fwrite(buff, sizeof(int8_t), p->CNT * 2, cfg->ofp);
+  //fwrite(buff, sizeof(int8_t), p->CNT * 2, cfg->ofp);
+  write(cfg->ofp, buff, sizeof(int8_t)*p->CNT*2);
+  write(cfg->ofp, "A", sizeof(char));
+  printf("Wrote\n");
 }
 
 /*
@@ -472,7 +480,10 @@ int main(int argc, char *argv[])
   if (cnfg.ftC.ftH == 0)
     exit(0);
 
-cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
+mkfifo("/tmp/rfefifo", 0666);
+//cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
+cnfg.ofp = open("/tmp/rfefifo", O_WRONLY); // Open FIFO
+write(cnfg.ofp, "FIFO", sizeof(char)*5);
 
 #ifdef DEBUG
   fprintf(stdout, "base:%s out:%s samp:%s ",
@@ -498,7 +509,7 @@ cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
   if (ftS != FT_OK)
   {
     fprintf(stderr, "Couldn't purge FTDI FIFO buffer! %d\n", ftS);
-    fclose(cnfg.ofp);
+    close(cnfg.ofp);
     exit(1);
   }
 
@@ -528,7 +539,8 @@ cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
           {
             if (cnfg.logfile == true)
             {
-              fwrite(ms.MSG, sizeof(uint8_t), BYTESPERMS, cnfg.ofp);
+              printf("Not dealing with this right now\n");
+              //fwrite(ms.MSG, sizeof(uint8_t), BYTESPERMS, cnfg.ofp);
             }
             else
             {
@@ -556,7 +568,7 @@ cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
             cnfg.logfile == true ? totalBytes : totalBytes * 2, cnfg.outFname);
   }
   ftS = FT_Close(cnfg.ftC.ftH);
-  fclose(cnfg.ofp);
+  close(cnfg.ofp);
 
   return 0;
 }
