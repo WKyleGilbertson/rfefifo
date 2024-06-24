@@ -279,17 +279,23 @@ void writeToBinFile(CONFIG *cfg, PKT *p)
 {
   int32_t idx = 0;
   int8_t numbers[4];
+  int8_t array[4*BYTESPERMS];
   signmag bData;
 
   for (idx = 0; idx < p->CNT; idx++)
   {
     memcpy(&bData, &p->MSG[idx], sizeof(uint8_t));
     numbers[0] = convert(bData.hiI);
+    array[idx*4 + 0] = numbers[0];
     numbers[1] = convert(bData.hiQ);
+    array[idx*4 + 1] = numbers[1];
     numbers[2] = convert(bData.loQ);
+    array[idx*4 + 2] = numbers[2];
     numbers[3] = convert(bData.loQ);
-  write(cfg->ofp, numbers, sizeof(int8_t)*4);
+    array[idx*4 + 3] = numbers[3];
+  //write(cfg->ofp, numbers, sizeof(int8_t)*4);
   }
+  write(cfg->ofp, array, sizeof(int8_t)*p->CNT);
 }
 
 int32_t enQueue(PKT *src, PKT *dst, uint32_t cnt)
