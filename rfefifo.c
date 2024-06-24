@@ -21,6 +21,32 @@
 #define MSPERSEC 1000
 // #define DEBUG
 
+typedef struct signmag
+{
+  uint8_t loI :2, loQ : 2, hiI : 2, hiQ : 2;
+} signmag;
+
+int8_t convert(uint8_t value) {
+  switch (value)
+  {
+    case 0:
+     return 1;
+     break;
+    case 1:
+     return 3;
+     break;
+    case 2:
+     return -1;
+     break;
+    case 3:
+     return -3;
+     break;
+    default:
+     return 0;
+     break;
+  }
+}
+
 typedef struct
 {
   uint8_t MSG[MLEN];
@@ -249,135 +275,22 @@ void readFTDIConfig(FT_CFG *cfg)
   }
 }
 
-/*
-void raw2bin(FILE *dst, FILE *src, bool FNHN)
-{
-  int32_t fSize = 0, idx = 0;
-  uint8_t byteData = 0, upperNibble, lowerNibble;
-  int8_t valueToWrite = 0;
-  fileSize(src, &fSize);
-  //  printf("Convert file size: %d\n", fSize);
-
-  for (idx = 0; idx < fSize; idx++)
-  {
-    byteData = fgetc(src);
-    upperNibble = (byteData & 0x30) >> 4;
-    lowerNibble = (byteData & 0x03);
-    switch (FNHN == true ? upperNibble : lowerNibble)
-    {
-    case 0x00:
-      valueToWrite = 1;
-      break;
-    case 0x01:
-      valueToWrite = 3;
-      break;
-    case 0x02:
-      valueToWrite = -1;
-      break;
-    case 0x03:
-      valueToWrite = -3;
-      break;
-    }
-    fputc(valueToWrite, dst);
-    switch (FNHN == true ? lowerNibble : upperNibble)
-    {
-    case 0x00:
-      valueToWrite = 1;
-      break;
-    case 0x01:
-      valueToWrite = 3;
-      break;
-    case 0x02:
-      valueToWrite = -1;
-      break;
-    case 0x03:
-      valueToWrite = -3;
-      break;
-    }
-    fputc(valueToWrite, dst);
-  }
-  fclose(src);
-  fclose(dst);
-}
-*/
-
 void writeToBinFile(CONFIG *cfg, PKT *p)
 {
   int32_t idx = 0;
-  uint8_t byteData = 0, upperNibble, lowerNibble;
-  int8_t valueToWrite = 0, buff[131072];
+  int8_t numbers[4];
+  signmag bData;
 
-  memset(buff, 0, 131072);
   for (idx = 0; idx < p->CNT; idx++)
   {
-    byteData = p->MSG[idx];
-    upperNibble = (byteData & 0x30) >> 4;
-    lowerNibble = (byteData & 0x03);
-    switch (cfg->FNHN == true ? upperNibble : lowerNibble)
-    {
-    case 0x00:
-      valueToWrite = 1;
-      break;
-    case 0x01:
-      valueToWrite = 3;
-      break;
-    case 0x02:
-      valueToWrite = -1;
-      break;
-    case 0x03:
-      valueToWrite = -3;
-      break;
-    }
-    buff[2 * idx] = valueToWrite;
-    switch (cfg->FNHN == true ? lowerNibble : upperNibble)
-    {
-    case 0x00:
-      valueToWrite = 1;
-      break;
-    case 0x01:
-      valueToWrite = 3;
-      break;
-    case 0x02:
-      valueToWrite = -1;
-      break;
-    case 0x03:
-      valueToWrite = -3;
-      break;
-    }
-    buff[2 * idx + 1] = valueToWrite;
+    memcpy(&bData, &p->MSG[idx], sizeof(uint8_t));
+    numbers[0] = convert(bData.hiI);
+    numbers[1] = convert(bData.hiQ);
+    numbers[2] = convert(bData.loQ);
+    numbers[3] = convert(bData.loQ);
+  write(cfg->ofp, numbers, sizeof(int8_t)*4);
   }
-  //fwrite(buff, sizeof(int8_t), p->CNT * 2, cfg->ofp);
-  write(cfg->ofp, buff, sizeof(int8_t)*p->CNT*2);
-  write(cfg->ofp, "A", sizeof(char));
-  printf("Wrote\n");
 }
-
-/*
-void convertFile(CONFIG *cfg)
-{
-  cfg->ifp = fopen(cfg->sampFname, "rb");
-  if (cfg->ifp == NULL)
-  {
-    fprintf(stderr, "No such file %s\n", cfg->sampFname);
-    exit(1);
-  }
-  else
-  {
-    cfg->ofp = fopen(cfg->outFname, "wb");
-    if (cfg->ofp == NULL)
-    {
-      fprintf(stderr, "Can't open output file\n");
-      exit(1);
-    }
-    else
-    {
-      raw2bin(cfg->ofp, cfg->ifp, cfg->FNHN);
-    }
-  }
-  fclose(cfg->ifp);
-  fclose(cfg->ofp);
-  exit(0);
-} */
 
 int32_t enQueue(PKT *src, PKT *dst, uint32_t cnt)
 {
@@ -481,9 +394,8 @@ int main(int argc, char *argv[])
     exit(0);
 
 mkfifo("/tmp/rfefifo", 0666);
-//cnfg.ofp = fopen(cnfg.outFname, "wb"); // Open FIFO
 cnfg.ofp = open("/tmp/rfefifo", O_WRONLY); // Open FIFO
-write(cnfg.ofp, "FIFO", sizeof(char)*5);
+//write(cnfg.ofp, "FIFO", sizeof(char)*5);
 
 #ifdef DEBUG
   fprintf(stdout, "base:%s out:%s samp:%s ",
@@ -544,8 +456,8 @@ write(cnfg.ofp, "FIFO", sizeof(char)*5);
             }
             else
             {
-              printf("DO I need this?\n");
-              // writeToBinFile(&cnfg, &ms);
+            //  printf("DO I need this?\n");
+              writeToBinFile(&cnfg, &ms);
             }
           }
           else{break;}

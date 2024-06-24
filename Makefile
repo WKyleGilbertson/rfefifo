@@ -10,5 +10,10 @@ rfefifo: rfefifo.c
 	-DCURRENT_DATE=$(CURRENT_DATE) -DCURRENT_NAME=$(CURRENT_NAME) \
 	-lftd2xx
 
+dbg: rfefifo.c
+	$(CC) rfefifo.c -g -o rfefifo -DCURRENT_HASH=$(CURRENT_HASH) \
+	-DCURRENT_DATE=$(CURRENT_DATE) -DCURRENT_NAME=$(CURRENT_NAME) \
+	-lftd2xx
+
 clean:
 	rm rfefifo
