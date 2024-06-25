@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdbool.h>
+#include <limits.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <time.h>
@@ -22,8 +23,8 @@
 // #define DEBUG
 
 typedef struct signmag
-{
-  uint8_t loI :2, loQ : 2, hiI : 2, hiQ : 2;
+{ // start from bit 0 --> go out to bit 8
+  uint8_t loQ :2, loI : 2, hiQ : 2, hiI : 2;
 } signmag;
 
 int8_t convert(uint8_t value) {
@@ -74,7 +75,7 @@ typedef struct
   bool logfile;
   bool useTimeStamp;
   bool FNHN;
-  uint32_t sampMS;
+  uint64_t sampMS;
   FT_CFG ftC;
   SWV V;
 } CONFIG;
@@ -221,7 +222,7 @@ void processArgs(int argc, char *argv[], CONFIG *cfg)
   else // argc not greater than 1
   {
     //    printf("Do I need this? Default params\n");
-    cfg->sampMS = 1;
+    cfg->sampMS = 1; // Maybe this should be zero?
   }
   if (cfg->useTimeStamp == true)
   {
@@ -356,6 +357,13 @@ int main(int argc, char *argv[])
   uint8_t blankLine[120];
   uint8_t ch;
 
+  initconfig(&cnfg);
+  processArgs(argc, argv, &cnfg);
+
+  if (cnfg.sampMS == 0) {
+    cnfg.sampMS = ULONG_MAX;
+  }
+
   cnfg.V.Major = MAJOR_VERSION;
   cnfg.V.Minor = MINOR_VERSION;
   cnfg.V.Patch = PATCH_VERSION;
@@ -372,10 +380,7 @@ int main(int argc, char *argv[])
   cnfg.V.Name[10] = '\0';
 #endif
 
-  for (idx = 0; idx < 120; idx++)
-  {
-    blankLine[idx] = '\b';
-  }
+  memset(blankLine, '\b', 119);
   blankLine[119] = '\0';
 
   memset(rx.MSG, 0, 65536);
@@ -383,8 +388,6 @@ int main(int argc, char *argv[])
   memset(ms.MSG, 0, 65536);
   bfr.CNT = bfr.SZE = 0;
   ms.CNT = ms.SZE = 0;
-
-  initconfig(&cnfg);
 
   // ftS = FT_Open(0, &ftH);
   ftS = FT_OpenEx("USB<->GPS A", FT_OPEN_BY_DESCRIPTION, &cnfg.ftC.ftH);
@@ -394,14 +397,13 @@ int main(int argc, char *argv[])
     // fprintf(stderr, "open device status not ok %d\n", ftS);
   }
   readFTDIConfig(&cnfg.ftC);
-  processArgs(argc, argv, &cnfg);
   if (cnfg.ftC.ftH == 0)
     exit(0);
 
 mkfifo("/tmp/rfefifo", 0666);
 cnfg.ofp = open("/tmp/rfefifo", O_WRONLY); // Open FIFO
-//write(cnfg.ofp, "FIFO", sizeof(char)*5);
 
+/* After Arguments Parsed, Open [Optional] Files */
 #ifdef DEBUG
   fprintf(stdout, "base:%s out:%s samp:%s ",
           cnfg.baseFname, cnfg.outFname, cnfg.sampFname);
@@ -412,8 +414,6 @@ cnfg.ofp = open("/tmp/rfefifo", O_WRONLY); // Open FIFO
           cnfg.FNHN == true ? "yes" : "no");
   fprintf(stdout, "ms: %d\n", cnfg.sampMS);
 #endif
-
-  /* After Arguments Parsed, Open [Optional] Files */
 
   targetBytes = BYTESPERMS * cnfg.sampMS;
   sampleTime = (float)(targetBytes / BYTESPERMS) / MSPERSEC;
