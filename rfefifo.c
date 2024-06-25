@@ -270,8 +270,8 @@ void readFTDIConfig(FT_CFG *cfg)
 #endif
     ftS = FT_SetLatencyTimer(cfg->ftH, 2);
     //ftS = FT_SetUSBParameters(cfg->ftH, 0x10000, 0x10000);
-    ftS = FT_SetUSBParameters(cfg->ftH, 0x02000, 0x02000); // 8192
-    //ftS = FT_SetUSBParameters(cfg->ftH, 0x03000, 0x03000); // 16384
+    //ftS = FT_SetUSBParameters(cfg->ftH, 0x02000, 0x02000); // 8192
+    ftS = FT_SetUSBParameters(cfg->ftH, 0x03000, 0x03000); // 16384
   }
 }
 
@@ -289,13 +289,12 @@ void writeToBinFile(CONFIG *cfg, PKT *p)
     array[idx*4 + 0] = numbers[0];
     numbers[1] = convert(bData.hiQ);
     array[idx*4 + 1] = numbers[1];
-    numbers[2] = convert(bData.loQ);
+    numbers[2] = convert(bData.loI);
     array[idx*4 + 2] = numbers[2];
     numbers[3] = convert(bData.loQ);
     array[idx*4 + 3] = numbers[3];
-  //write(cfg->ofp, numbers, sizeof(int8_t)*4);
   }
-  write(cfg->ofp, array, sizeof(int8_t)*p->CNT);
+  write(cfg->ofp, array, sizeof(int8_t)*p->CNT*4);
 }
 
 int32_t enQueue(PKT *src, PKT *dst, uint32_t cnt)
