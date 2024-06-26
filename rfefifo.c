@@ -10,8 +10,6 @@
 #include <limits.h>
 #include <stdio.h>
 #include <fcntl.h>
-#include <time.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "inc/WinTypes.h"
@@ -22,12 +20,12 @@
 #define MSPERSEC 1000
 // #define DEBUG
 
-typedef struct signmag
+typedef struct signmag2bit
 { // start from bit 0 --> go out to bit 8
   uint8_t loI :2, loQ : 2, hiI : 2, hiQ : 2;
-} signmag;
+} signmag2bit;
 
-int8_t convert(uint8_t value) {
+int8_t convert_sm2b_to_int8(uint8_t value) {
   switch (value)
   {
     case 0:
@@ -42,6 +40,47 @@ int8_t convert(uint8_t value) {
     case 3:
      return -3;
      break;
+    default:
+     return 0;
+     break;
+  }
+}
+
+typedef struct signmag3bit
+{ // start from bit 0 --> go out to bit 8
+  uint8_t lN :4, hN : 4;
+} signmag3bit;
+
+int8_t convert_sm3b_to_int8(uint8_t value) {
+  uint8_t hldr = 0x00;
+  hldr  = (value & 0x03) << 1;
+  hldr |= (value & 0x04) >> 3;
+  switch (hldr)
+  {
+    case 0:
+     return 1;
+     break;
+    case 1:
+     return 3;
+     break;
+    case 2:
+     return 5;
+     break;
+    case 3:
+     return 7;
+     break;
+    case 4:
+     return -1;
+     break;
+    case 5:
+     return -3;
+    break;
+    case 6:
+     return -5;
+    break;
+    case 7:
+     return -7;
+    break;
     default:
      return 0;
      break;
@@ -75,17 +114,12 @@ typedef struct
   bool logfile;
   bool useTimeStamp;
   bool FNHN;
+  bool realOnly;
+  bool sm3bit;
   uint64_t sampMS;
   FT_CFG ftC;
   SWV V;
 } CONFIG;
-
-void getISO8601(char datetime[17])
-{
-  struct timeval curTime;
-  gettimeofday(&curTime, NULL);
-  strftime(datetime, 17, "%Y%m%dT%H%M%SZ", gmtime(&curTime.tv_sec));
-}
 
 void printFTDIdevInfo(FT_CFG *ftC)
 {
@@ -113,6 +147,8 @@ void initconfig(CONFIG *cfg)
   cfg->logfile = false;
   cfg->useTimeStamp = false;
   cfg->FNHN = true;
+  cfg->realOnly = true;
+  cfg->sm3bit = false;
   cfg->sampMS = 1;
 }
 
@@ -121,14 +157,14 @@ void processArgs(int argc, char *argv[], CONFIG *cfg)
   static int len, i, ch = ' ';
   static char *usage =
       "usage: rfefifo [options]\n"
-      "       -f <filename> write to a different filename than the default\n"
-      "       -l [filename] log raw data rather than binary interpretation\n"
-      "       -r <filename> read raw log file and translate to binary\n"
-      "       -t            use time tag for file name instead of default\n"
-      "       -n            use FNLN instead of FNHN\n"
-      "       -v            print version information\n"
-      "       -?|h          show this usage infomation message\n"
-      "  defaults: 1 ms of data logged in binary format as l1ifdata.bin\n";
+      "       -n    use FNLN instead of FNHN\n"
+      "       -q    include Quadrature for DS2+Q data\n"
+      "       -3    3 bit sign mag real only (DS6) \n"
+      "       -v    print version information\n"
+      "       -?|h  show this usage infomation message\n"
+      "  defaults: 1 ms of real data written to /tmp/rfefifo \n"
+      "  All data written to FIFO is 8 bit I/Q Interleaved. \n"
+      "  If only real samples are desired, Q is stuffed with zeros.\n";
 
   if (argc > 1)
   {
@@ -151,52 +187,11 @@ void processArgs(int argc, char *argv[], CONFIG *cfg)
         case 'n':
           cfg->FNHN = false;
           break;
-        case 'f':
-          if (((i + 1) < argc) && (argv[i + 1][0] != '-'))
-          {
-            strcpy(cfg->outFname, argv[++i]);
-          }
-          else
-          {
-            printf("%s", usage);
-            exit(1);
-          }
+        case 'q':
+          cfg->realOnly = false;
           break;
-        case 'l':
-          if (((i + 1) < argc) && (argv[i + 1][0] != '-'))
-          {
-            strcpy(cfg->outFname, argv[++i]);
-          }
-          else
-          {
-            strcpy(cfg->outFname, cfg->sampFname);
-          }
-          cfg->logfile = true;
-          break;
-        case 'r':
-          if (((i + 1) < argc) && (argv[i + 1][0] != '-'))
-          {
-            strcpy(cfg->sampFname, argv[++i]);
-          }
-          else
-          {
-            printf("%s", usage);
-            exit(1);
-          }
-          cfg->convertFile = true;
-          cfg->sampMS = 0;
-          len = strlen(cfg->sampFname);
-          strcpy(cfg->outFname, cfg->sampFname);
-          cfg->outFname[len - 3] = '\0';
-          strcat(cfg->outFname, "bin");
-          break;
-        case 't':
-          cfg->useTimeStamp = true;
-
-          getISO8601(cfg->baseFname); // getISO8601 for GCC platforms
-#ifdef DEBUG
-          printf("%s\n", cfg->baseFname);
-#endif
+        case '3':
+          cfg->sm3bit = true;
           break;
         case 'v':
           fprintf(stdout, "%s: GitCI:%s %s v%.1d.%.1d.%.1d\n",
@@ -278,22 +273,29 @@ void readFTDIConfig(FT_CFG *cfg)
 
 void writeToBinFile(CONFIG *cfg, PKT *p)
 {
-  int32_t idx = 0;
-  int8_t numbers[4];
+  uint16_t idx = 0;
   int8_t array[4*BYTESPERMS];
-  signmag bData;
+  signmag2bit sm2b;
+  signmag3bit sm3b;
 
   for (idx = 0; idx < p->CNT; idx++)
   {
-    memcpy(&bData, &p->MSG[idx], sizeof(uint8_t));
-    numbers[0] = convert(bData.hiI);
-    array[idx*4 + 0] = numbers[0];
-    numbers[1] = convert(bData.hiQ);
-    array[idx*4 + 1] = numbers[1];
-    numbers[2] = convert(bData.loI);
-    array[idx*4 + 2] = numbers[2];
-    numbers[3] = convert(bData.loQ);
-    array[idx*4 + 3] = numbers[3];
+    if (cfg->sm3bit == false) {
+    memcpy(&sm2b, &p->MSG[idx], sizeof(uint8_t));
+    array[idx*4 + 0] = convert_sm2b_to_int8(sm2b.hiI);
+    array[idx*4 + 1] = (cfg->realOnly == true) ? 0x00 :
+     convert_sm2b_to_int8(sm2b.hiQ);
+    array[idx*4 + 2] = convert_sm2b_to_int8(sm2b.loI);
+    array[idx*4 + 3] = (cfg->realOnly == true) ? 0x00 :
+     convert_sm2b_to_int8(sm2b.loQ); 
+    }
+    else {
+    memcpy(&sm3b, &p->MSG[idx], sizeof(uint8_t));
+    array[idx*4 + 0] = convert_sm3b_to_int8(sm3b.hN);
+    array[idx*4 + 1] = 0x00;
+    array[idx*4 + 2] = convert_sm3b_to_int8(sm3b.lN);
+    array[idx*4 + 3] = 0x00;
+    }
   }
   write(cfg->ofp, array, sizeof(int8_t)*p->CNT*4);
 }
