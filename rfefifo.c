@@ -24,7 +24,7 @@
 
 typedef struct signmag
 { // start from bit 0 --> go out to bit 8
-  uint8_t loQ :2, loI : 2, hiQ : 2, hiI : 2;
+  uint8_t loI :2, loQ : 2, hiI : 2, hiQ : 2;
 } signmag;
 
 int8_t convert(uint8_t value) {
